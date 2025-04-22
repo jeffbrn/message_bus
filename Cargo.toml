@@ -1,0 +1,14 @@
+[package]
+name = "mbus"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["lib"]
+name = "mbus"
+description = "A message bus for inter-thread communication"
+
+[[bin]]
+name = "mbus-example"
+
+[dependencies]
