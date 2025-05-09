@@ -2,7 +2,7 @@ use std::sync::{Condvar, Mutex, Arc};
 
 /// holds the state of the signal
 struct Flag {
-    state: bool, // true if signaled
+    _state: bool, // true if signaled
 }
 
 pub struct Signal {
@@ -10,10 +10,11 @@ pub struct Signal {
     condvar: Arc<Condvar>,
 }
 
+#[cfg(test)]
 impl Signal {
     pub fn new() -> Self {
         Self {
-            status: Arc::new(Mutex::new(Flag { state: false })),
+            status: Arc::new(Mutex::new(Flag { _state: false })),
             condvar: Arc::new(Condvar::new()),
         }
     }
@@ -22,10 +23,10 @@ impl Signal {
     pub fn wait(&mut self) {
         println!("Signal waiting");
         let mut guard = self.status.lock().unwrap();
-        while !guard.state {
+        while !guard._state {
             guard = self.condvar.wait(guard).unwrap();
         }
-        guard.state = false;
+        guard._state = false;
         println!("Signal reset");
     }
 
@@ -33,7 +34,7 @@ impl Signal {
     pub fn notify(&mut self) {
         println!("Signal notified");
         let mut guard = self.status.lock().unwrap();
-        guard.state = true;
+        guard._state = true;
         self.condvar.notify_all();
     }
 }
@@ -69,12 +70,12 @@ mod tests {
         signal.wait();
         {
             let guard = signal.status.lock().unwrap();
-            assert_eq!(guard.state, false);
+            assert_eq!(guard._state, false);
         }
         signal.wait();
         {
             let guard = signal.status.lock().unwrap();
-            assert_eq!(guard.state, false);
+            assert_eq!(guard._state, false);
         }
         thrd.join().unwrap();
     }

@@ -1,14 +1,17 @@
+use std::thread::sleep;
+use std::time::Duration;
+
 use mbus::Worker;
 use mbus::MessageBusSeq;
-//use mbus::workers::MsgNode;
+use log::{debug, info};
 
 struct DoubleWorker {}
 impl Worker for DoubleWorker {
-    fn check_msg(&self, msg: i32) -> bool {
+    fn check_msg(&mut self, msg: i32) -> bool {
         msg % 2 == 0
     }
 
-    fn handle_msg(&self, msg: i32) -> f32 {
+    fn handle_msg(&mut self, msg: i32) -> f32 {
         println!("=============================================");
         println!("DoubleWorker handling message: {}", msg);
         println!("=============================================");
@@ -16,8 +19,40 @@ impl Worker for DoubleWorker {
     }
 }
 
+struct TripleWorker {}
+impl Worker for TripleWorker {
+    fn check_msg(&mut self, msg: i32) -> bool {
+        msg % 3 == 0
+    }
+
+    fn handle_msg(&mut self, msg: i32) -> f32 {
+        println!("=============================================");
+        println!("TripleWorker handling message: {}", msg);
+        println!("=============================================");
+            msg as f32 * 3.0
+    }
+}
+
+fn unhandled(msg: &i32) {
+    println!("=============================================");
+    println!("Unhandled message: {}", msg);
+    println!("=============================================");
+}
+
 fn main() {
-    println!("Hello, world!");
-    let wrk1 = Box::new(DoubleWorker {});
-    let mbus = MessageBusSeq::new();
+    simple_logger::init_with_level(log::Level::Trace).unwrap();
+    let mut mbus = MessageBusSeq::new();
+    debug!("MessageBus created");
+    mbus.set_unhandled(unhandled);
+    mbus.publish(10);
+    mbus.add_worker(Box::new(DoubleWorker {}));
+    mbus.publish(20);
+    mbus.publish(15);
+    sleep(Duration::from_millis(200));
+    mbus.set_enabled(0, false);
+    mbus.add_worker(Box::new(TripleWorker {}));
+    mbus.publish(20);
+    mbus.publish(15);
+    println!("# of workers = {}", mbus.len());
+    info!("\nDone!");
 }
