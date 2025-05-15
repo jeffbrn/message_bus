@@ -6,6 +6,9 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use log::{debug, trace};
 use crate::workers::{Worker, msg_node::MsgNode};
 
+//TODO: templates
+//TODO: results
+
 pub type MsgBusHandler = fn(&i32) -> ();
 
 pub struct MessageBusSeq {
@@ -80,6 +83,17 @@ impl MessageBusSeq {
         self.workers.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.workers.is_empty()
+    }
+
+    pub fn get_num_msgs(&self) -> usize {
+        self.data.read().unwrap().num_msgs
+    }
+    pub fn get_num_unhandled(&self) -> usize {
+        self.data.read().unwrap().num_unhandled
+    }
+
     pub fn set_enabled(&mut self, idx: usize, enabled: bool) {
         if idx < self.workers.len() {
             self.workers[idx].enabled.store(enabled, Relaxed);
@@ -126,4 +140,111 @@ impl MessageBusSeq {
         (signal, t)
     }
 
+}
+
+impl Drop for MessageBusSeq {
+    fn drop(&mut self) {
+        // stop the thread
+        self.data.write().unwrap().running.store(false, Relaxed);
+        if let Some(thrd) = self.thrd.take() {
+            thrd.join().unwrap();
+        }
+    }
+}
+
+impl Default for MessageBusSeq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::thread::sleep;
+
+    use super::*;
+    use crate::workers::Worker;
+    use crate::Signal;
+
+    struct TestWorker {
+        divisor: i32,
+        signal: Signal
+    }
+    impl TestWorker {
+        fn new(divisor: i32) -> Self {
+            Self {
+                divisor,
+                signal: Signal::new(),
+            }
+        }
+    }
+    impl Worker for TestWorker {
+        fn check_msg(&mut self, msg: i32) -> bool {
+            msg % self.divisor == 0
+        }
+
+        fn handle_msg(&mut self, msg: i32) -> f32 {
+            self.signal.notify();
+            msg as f32 * 2.0
+        }
+    }
+
+    fn test_unhandled(msg: &i32) {
+        println!("=============================================");
+        println!("Unhandled message: {}", msg);
+        println!("=============================================");
+    }
+
+    #[test]
+    fn test_no_workers() {
+        let mut mbus = MessageBusSeq::new();
+        mbus.set_unhandled(test_unhandled);
+        assert_eq!(mbus.len(), 0);
+        mbus.publish(10);
+        sleep(Duration::from_millis(500));
+        assert_eq!(mbus.get_num_msgs(), 1);
+        assert_eq!(mbus.get_num_unhandled(), 1);
+    }
+
+    #[test]
+    fn test_single_worker() {
+        let mut mbus = MessageBusSeq::new();
+        mbus.set_unhandled(test_unhandled);
+        let wrk = TestWorker::new(2);
+        let mut sig = wrk.signal.clone();
+        mbus.add_worker(Box::new(wrk));
+        sleep(Duration::from_millis(500));
+        mbus.publish(20);
+        sig.wait();
+        assert_eq!(mbus.get_num_msgs(), 1);
+        assert_eq!(mbus.get_num_unhandled(), 0);
+        mbus.publish(15);
+        sleep(Duration::from_millis(500));
+        assert_eq!(mbus.get_num_msgs(), 2);
+        assert_eq!(mbus.get_num_unhandled(), 1);
+    }
+
+    #[test]
+    fn test_multiple_workers() {
+        let mut mbus = MessageBusSeq::new();
+        mbus.set_unhandled(test_unhandled);
+        let wrk1 = TestWorker::new(2);
+        let mut sig1 = wrk1.signal.clone();
+        mbus.add_worker(Box::new(wrk1));
+        let wrk2 = TestWorker::new(3);
+        let mut sig2 = wrk2.signal.clone();
+        mbus.add_worker(Box::new(wrk2));
+        sleep(Duration::from_millis(500));
+        mbus.publish(20);
+        sig1.wait();
+        assert_eq!(mbus.get_num_msgs(), 1);
+        assert_eq!(mbus.get_num_unhandled(), 0);
+        mbus.publish(15);
+        sig2.wait();
+        assert_eq!(mbus.get_num_msgs(), 2);
+        assert_eq!(mbus.get_num_unhandled(), 0);
+        mbus.publish(5);
+        sleep(Duration::from_millis(500));
+        assert_eq!(mbus.get_num_msgs(), 3);
+        assert_eq!(mbus.get_num_unhandled(), 1);
+    }
 }
