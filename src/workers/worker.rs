@@ -1,4 +1,4 @@
-pub trait Worker : Sync + Send {
-    fn check_msg(&mut self, msg: i32) -> bool;
-    fn handle_msg(&mut self, msg: i32) -> f32;
+pub trait Worker<TMsg, TResult> : Sync + Send where TMsg: Send, TResult: Send {
+    fn check_msg(&mut self, msg: TMsg) -> bool;
+    fn handle_msg(&mut self, msg: TMsg) -> TResult;
 }

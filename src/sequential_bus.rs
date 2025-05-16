@@ -9,27 +9,27 @@ use crate::workers::{Worker, msg_node::MsgNode};
 //TODO: templates
 //TODO: results
 
-pub type MsgBusHandler = fn(&i32) -> ();
+pub type MsgBusHandler<TMsg> = fn(&TMsg) -> ();
 
-pub struct MessageBusSeq {
-    data: Arc<RwLock<MsgBusState>>,
-    input_msg: Sender<i32>,
+pub struct MessageBusSeq<TMsg> {
+    data: Arc<RwLock<MsgBusState<TMsg>>>,
+    input_msg: Sender<TMsg>,
     thrd: Option<thread::JoinHandle<()>>,
     workers: Vec<MsgNode>,
 }
 
-struct MsgBusState {
-    unhandled_msg: Receiver<i32>,
-    unhandled_msg_handler: Option<MsgBusHandler>,
+struct MsgBusState<TMsg> {
+    unhandled_msg: Receiver<TMsg>,
+    unhandled_msg_handler: Option<MsgBusHandler<TMsg>>,
     running: AtomicBool,
     pub num_msgs: usize,
     pub num_unhandled: usize,
 }
 
-impl MessageBusSeq {
+impl<TMsg> MessageBusSeq<TMsg> where TMsg:Send+Copy+'static {
 
-    pub fn new() -> Self {
-        let (msg_tx, msg_rx) = unbounded();
+    pub fn new<TResult>() -> Self {
+        let (msg_tx, msg_rx) = unbounded::<TMsg>();
         let mut retval = Self {
             data: Arc::new(RwLock::new(MsgBusState {
                 unhandled_msg: msg_rx,
@@ -55,24 +55,24 @@ impl MessageBusSeq {
     }
 
     /// publish a message onto the bus
-    pub fn publish(&self, msg: i32) {
+    pub fn publish(&self, msg: TMsg) {
         // update the message count
         {
             let mut data = self.data.write().unwrap();
             data.num_msgs += 1;
         }
-        trace!("Publishing message: {}", msg);
+        trace!("Publishing message");
         // put message onto the bus
         self.input_msg.send(msg).unwrap();
     }
 
     /// set a handler to receive unprocessed messages
-    pub fn set_unhandled(&mut self, handler: MsgBusHandler) {
+    pub fn set_unhandled(&mut self, handler: MsgBusHandler<TMsg>) {
         self.data.write().unwrap().unhandled_msg_handler = Some(handler);
         trace!("Unhandled message handler set");
     }
 
-    pub fn add_worker(&mut self, worker: Box<dyn Worker>) {
+    pub fn add_worker<TResult>(&mut self, worker: Box<dyn Worker<TMsg, TResult>>) where TResult: Send + Copy + 'static {
         let mut data =self.data.write().unwrap();
         let (node, msg_out) = MsgNode::new(worker, data.unhandled_msg.clone());
         self.workers.push(node);
@@ -101,7 +101,7 @@ impl MessageBusSeq {
     }
 
     /// Initialize the message bus daemon thread
-    fn init_mb_daemon(thrd_data: Arc<RwLock<MsgBusState>>) -> (Arc<(Mutex<()>, Condvar)>, thread::JoinHandle<()>) {
+    fn init_mb_daemon(thrd_data: Arc<RwLock<MsgBusState<TMsg>>>) -> (Arc<(Mutex<()>, Condvar)>, thread::JoinHandle<()>) {
         // setup  way for the deaomon to signal the main thread that it is ready to recive messages
         let startup = Arc::new((Mutex::new(()), Condvar::new()));
         let signal = startup.clone();
@@ -122,7 +122,7 @@ impl MessageBusSeq {
                 }
                 // process the unhandled message
                 let msg = msg.unwrap();
-                debug!("MsgBus thread received message: {}", msg);
+                debug!("MsgBus thread received message");
                 {
                     let mut data = thrd_data.write().unwrap();
                     // update the message count
@@ -142,7 +142,7 @@ impl MessageBusSeq {
 
 }
 
-impl Drop for MessageBusSeq {
+impl<TMsg> Drop for MessageBusSeq<TMsg> {
     fn drop(&mut self) {
         // stop the thread
         self.data.write().unwrap().running.store(false, Relaxed);
@@ -152,11 +152,6 @@ impl Drop for MessageBusSeq {
     }
 }
 
-impl Default for MessageBusSeq {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 #[cfg(test)]
 mod tests {
     use std::thread::sleep;
@@ -177,7 +172,8 @@ mod tests {
             }
         }
     }
-    impl Worker for TestWorker {
+    impl Worker<i32, f32> for TestWorker
+    {
         fn check_msg(&mut self, msg: i32) -> bool {
             msg % self.divisor == 0
         }
@@ -196,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_no_workers() {
-        let mut mbus = MessageBusSeq::new();
+        let mut mbus = MessageBusSeq::new::<i32>();
         mbus.set_unhandled(test_unhandled);
         assert_eq!(mbus.len(), 0);
         mbus.publish(10);
@@ -207,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_single_worker() {
-        let mut mbus = MessageBusSeq::new();
+        let mut mbus = MessageBusSeq::new::<i32>();
         mbus.set_unhandled(test_unhandled);
         let wrk = TestWorker::new(2);
         let mut sig = wrk.signal.clone();
@@ -225,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_multiple_workers() {
-        let mut mbus = MessageBusSeq::new();
+        let mut mbus = MessageBusSeq::new::<i32>();
         mbus.set_unhandled(test_unhandled);
         let wrk1 = TestWorker::new(2);
         let mut sig1 = wrk1.signal.clone();

@@ -6,7 +6,7 @@ use mbus::MessageBusSeq;
 use log::{debug, info};
 
 struct DoubleWorker {}
-impl Worker for DoubleWorker {
+impl Worker<i32, f32> for DoubleWorker {
     fn check_msg(&mut self, msg: i32) -> bool {
         msg % 2 == 0
     }
@@ -20,7 +20,7 @@ impl Worker for DoubleWorker {
 }
 
 struct TripleWorker {}
-impl Worker for TripleWorker {
+impl Worker<i32, f32> for TripleWorker {
     fn check_msg(&mut self, msg: i32) -> bool {
         msg % 3 == 0
     }
@@ -41,7 +41,7 @@ fn unhandled(msg: &i32) {
 
 fn main() {
     simple_logger::init_with_level(log::Level::Trace).unwrap();
-    let mut mbus = MessageBusSeq::new();
+    let mut mbus = MessageBusSeq::new::<i32>();
     debug!("MessageBus created");
     mbus.set_unhandled(unhandled);
     mbus.publish(10);

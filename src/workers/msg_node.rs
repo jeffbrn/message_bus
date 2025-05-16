@@ -10,7 +10,8 @@ pub struct MsgNode {
 }
 
 impl MsgNode {
-    pub fn new(mut worker: Box<dyn Worker>, msg_in: Receiver<i32>) -> (Self, Receiver<i32>) {
+    pub fn new<TMsg, TResult>(mut worker: Box<dyn Worker<TMsg, TResult>>, msg_in: Receiver<TMsg>) -> (Self, Receiver<TMsg>)
+        where TMsg: Send+Copy+'static, TResult: Send+Copy+'static{
         let (tx, rx) = unbounded();
         let flag = Arc::new(AtomicBool::new(true));
         let run = flag.clone();
@@ -25,10 +26,10 @@ impl MsgNode {
                 let msg = msg.unwrap();
                 let enable = wrk_enable.load(Relaxed);
                 if enable && worker.check_msg(msg) {
-                    let result = worker.handle_msg(msg);
-                    info!("Worker thread received message: {}, result = {}", msg, result);
+                    let _result = worker.handle_msg(msg);
+                    info!("Worker thread received message");
                 } else {
-                    debug!("Passing message to next: {}", msg);
+                    debug!("Passing message to next");
                     tx.send(msg).unwrap_or_default();
                 }
             }
@@ -67,7 +68,7 @@ mod tests {
             }
         }
     }
-    impl Worker for TestWorker {
+    impl Worker<i32, f32> for TestWorker {
         fn check_msg(&mut self, msg: i32) -> bool {
             msg % 2 == 0
         }
