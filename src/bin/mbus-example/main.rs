@@ -7,29 +7,29 @@ use log::{debug, info};
 
 struct DoubleWorker {}
 impl Worker<i32, f32> for DoubleWorker {
-    fn check_msg(&mut self, msg: i32) -> bool {
+    fn check_msg(&mut self, msg: &i32) -> bool {
         msg % 2 == 0
     }
 
-    fn handle_msg(&mut self, msg: i32) -> f32 {
+    fn handle_msg(&mut self, msg: &i32) -> f32 {
         println!("=============================================");
         println!("DoubleWorker handling message: {}", msg);
         println!("=============================================");
-            msg as f32 * 2.0
+            *msg as f32 * 2.0
     }
 }
 
 struct TripleWorker {}
 impl Worker<i32, f32> for TripleWorker {
-    fn check_msg(&mut self, msg: i32) -> bool {
+    fn check_msg(&mut self, msg: &i32) -> bool {
         msg % 3 == 0
     }
 
-    fn handle_msg(&mut self, msg: i32) -> f32 {
+    fn handle_msg(&mut self, msg: &i32) -> f32 {
         println!("=============================================");
         println!("TripleWorker handling message: {}", msg);
         println!("=============================================");
-            msg as f32 * 3.0
+            *msg as f32 * 3.0
     }
 }
 

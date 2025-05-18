@@ -6,7 +6,6 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use log::{debug, trace};
 use crate::workers::{Worker, msg_node::MsgNode};
 
-//TODO: templates
 //TODO: results
 
 pub type MsgBusHandler<TMsg> = fn(&TMsg) -> ();
@@ -26,7 +25,7 @@ struct MsgBusState<TMsg> {
     pub num_unhandled: usize,
 }
 
-impl<TMsg> MessageBusSeq<TMsg> where TMsg:Send+Copy+'static {
+impl<TMsg> MessageBusSeq<TMsg> where TMsg:Send+Clone+'static {
 
     pub fn new<TResult>() -> Self {
         let (msg_tx, msg_rx) = unbounded::<TMsg>();
@@ -72,7 +71,7 @@ impl<TMsg> MessageBusSeq<TMsg> where TMsg:Send+Copy+'static {
         trace!("Unhandled message handler set");
     }
 
-    pub fn add_worker<TResult>(&mut self, worker: Box<dyn Worker<TMsg, TResult>>) where TResult: Send + Copy + 'static {
+    pub fn add_worker<TResult>(&mut self, worker: Box<dyn Worker<TMsg, TResult>>) where TResult: Send + Clone + 'static {
         let mut data =self.data.write().unwrap();
         let (node, msg_out) = MsgNode::new(worker, data.unhandled_msg.clone());
         self.workers.push(node);
@@ -174,13 +173,13 @@ mod tests {
     }
     impl Worker<i32, f32> for TestWorker
     {
-        fn check_msg(&mut self, msg: i32) -> bool {
+        fn check_msg(&mut self, msg: &i32) -> bool {
             msg % self.divisor == 0
         }
 
-        fn handle_msg(&mut self, msg: i32) -> f32 {
+        fn handle_msg(&mut self, msg: &i32) -> f32 {
             self.signal.notify();
-            msg as f32 * 2.0
+            *msg as f32 * self.divisor as f32
         }
     }
 
@@ -243,4 +242,71 @@ mod tests {
         assert_eq!(mbus.get_num_msgs(), 3);
         assert_eq!(mbus.get_num_unhandled(), 1);
     }
+
+    #[derive(Debug,Clone)]
+    struct TestMsg {
+        id: u32,
+        tstamp: f32,
+        mode: String,
+        xyz: [f64; 3],
+    }
+    #[derive(Debug,Clone)]
+    struct TestResult {
+        id: u32,
+        tstamp: f32,
+        mode: String,
+        meas: [f64; 3],
+    }
+    struct TestWorker2 {
+        signal: Signal
+    }
+    impl TestWorker2 {
+        fn new() -> Self {
+            Self {
+                signal: Signal::new(),
+            }
+        }
+    }
+    impl Worker<TestMsg, TestResult> for TestWorker2 {
+        fn check_msg(&mut self, msg: &TestMsg) -> bool {
+            println!("Checking message: {}", msg.id);
+            msg.id % 2 == 0
+        }
+
+        fn handle_msg(&mut self, msg: &TestMsg) -> TestResult {
+            println!("TestWorker handling message: {}", msg.id);
+            self.signal.notify();
+            TestResult {
+                id: msg.id,
+                tstamp: msg.tstamp,
+                mode: msg.mode.clone(),
+                meas: [msg.xyz[0] * 2.0, msg.xyz[1] * 2.0, msg.xyz[2] * 2.0],
+            }
+        }
+    }
+
+    fn test_unhandled2(msg: &TestMsg) {
+        println!("=============================================");
+        println!("Unhandled message: {}", msg.id);
+        println!("=============================================");
+    }
+
+    #[test]
+    fn test_complex_message() {
+        let mut mbus = MessageBusSeq::new::<TestMsg>();
+        mbus.set_unhandled(test_unhandled2);
+        let wrk = TestWorker2::new();
+        let mut sig = wrk.signal.clone();
+        mbus.add_worker(Box::new(wrk));
+        sleep(Duration::from_millis(500));
+        mbus.publish(TestMsg {id: 20, tstamp: 1.1, mode: "12".to_string(), xyz: [1.1, 1.2, 1.3] });
+        sig.wait();
+        assert_eq!(mbus.get_num_msgs(), 1);
+        assert_eq!(mbus.get_num_unhandled(), 0);
+        mbus.publish(TestMsg {id: 15, tstamp: 1.1, mode: "12".to_string(), xyz: [1.1, 1.2, 1.3] });
+        sleep(Duration::from_millis(500));
+        assert_eq!(mbus.get_num_msgs(), 2);
+        assert_eq!(mbus.get_num_unhandled(), 1);
+    }
+
 }
